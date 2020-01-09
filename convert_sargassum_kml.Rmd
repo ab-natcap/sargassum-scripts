@@ -1,0 +1,97 @@
+---
+title: "Extract Sargassum Data from OceanCleaner KMLs"
+author: "Allison Bailey"
+date: "9/17/2019"
+output: html_document
+---
+
+This notebook is to extract Sargassum data downloaded from Ocean Cleaner's website
+2018: http://sargassummonitoring.com/2018-sargassum-sargasses-sargazo/
+current (2019): http://sargassummonitoring.com/
+
+Data were downloaded as KML files from the website
+
+Data are stored as points.  
+One file per year for presence and one for absence observations
+
+Convert to GeoPackage layers
+
+# Setup
+### Load Packages..
+
+```{r setup, include=FALSE, echo = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(here)
+library(sf)
+library(tidyverse)
+library(lubridate)
+```
+
+Read KML Data and extract some info into new columns
+```{r kml_data}
+# https://ryanpeek.github.io/mapping-in-R-workshop/spatial_kml.html
+# Read data from KML
+presence_2018_kml <- st_read(here::here("data/oceancleaner","2018 Beaches with sargassum seaweeds - Plages avec algues sargasses.kml"))
+absence_2018_kml <- st_read(here::here("data/oceancleaner","2018 - Beaches without sargassum - Plages sans sargasses - Playas sin sargazo.kml"))
+
+# Pattern for dates in the format of DD/MM/YYYY or MM/DD/YYYY or MM/YYYY
+#  Does not check to confirm that they are valid dates, just the right format
+
+date_pattern <- "([0-9]{2}/)?[0-9]{2}/[0-9]{4}"  # Any of the formats
+date_dmy <- "[0-3][0-9]/[0-1][0-9]/[0-9]{4}"  # DD/MM/YYYY (or MM/DD/YY for some dates)
+date_my <- "[0-1][0-9]/[0-9]{4}"  # MM/YYYY
+
+# Creates a new column each time, so 2nd statement overwrites the first
+# presence_2018_kml$source_date <- dmy(str_extract(presence_2018_kml$Name, date_pattern))
+# presence_2018_kml$source_date <- myd(str_extract(presence_2018_kml$Name, date_pattern), truncated = 1)
+
+# Calculate source_date column based on type of date format found
+presence_2018 <- presence_2018_kml %>%
+  transmute(
+    # rename KML default column names
+    name_kml = Name,
+    desc_kml = Description
+  ) %>%
+  mutate(
+    # Extract any date values from the Name column
+    source_date = case_when(
+      str_detect(name_kml, date_dmy) ~ dmy(str_extract(name_kml, date_dmy)),
+      str_detect(name_kml, date_my) ~ myd(str_extract(name_kml, date_my), truncated = 1)
+    )
+  ) %>%
+  mutate(
+    # Create new column to capture the date type
+    date_type = case_when(
+      str_detect(name_kml, date_dmy) ~ "DMY",
+      str_detect(name_kml, date_my) ~ "MY"   
+    )
+  ) %>%
+  mutate(
+    # Column for sargassum occurrence (present/absent)
+    occur = "present"
+  ) %>%
+  filter(
+    str_detect(name_kml, "FOR 2019", negate = TRUE)
+  )
+
+```
+Quick Map to Review data
+```{r map_it}
+# simple map to visualize data
+ggplot() +
+  labs(x="Longitude (WGS84)", y="Latitude",
+       title="Sargassum Locations 2018") + 
+  geom_sf(data=presence_2018, col="blue", lwd=0.4, pch=21) +
+  theme_bw()
+```
+
+Output to Geopackage
+```{r geopkg_it}
+gpkg_file = here::here("data/oceancleaner","sargassum_oceancleaner.gpkg")
+st_write(presence_2018, dsn=gpkg_file, layer='sargassum_present2018', layer_options = "OVERWRITE = YES")
+
+# Try reading it back
+# check available layers from a geopackage
+st_layers(gpkg_file)
+
+```

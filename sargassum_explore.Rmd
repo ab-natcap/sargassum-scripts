@@ -1,0 +1,319 @@
+---
+title: "Sargassum Data Exploration"
+author: "Allison Bailey"
+date: "8/19/2019"
+output: html_document
+---
+
+This notebook is to explore Sargassum raster data from USF
+
+# Setup
+### Load Packages..
+
+```{r setup, include=FALSE, echo = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(raster)
+library(rgdal)
+library(scales)
+library(sf)
+library(ggplot2)
+library(stringr)
+library(RColorBrewer)
+library(gridExtra)
+library(dplyr)
+library(tidyr)
+# library(mapview)
+# library(sp)
+# library(data.table)
+```
+
+Explore Sargassum Data
+```{r sargassum_data}
+basedir <- "/Users/arbailey/natcap/mar/sargassum"
+# datadir <- "/Users/arbailey/natcap/mar/sargassum/data/0190272/1.1/data/0-data/Sargassum_areal_coverage/Sargassum_areal_coverage"
+datadir <- file.path(basedir, "data/0190272/1.1/data/0-data/Sargassum_areal_coverage/Sargassum_areal_coverage")
+tiff <- "Year-2018-07.S_coverage.tiff"
+GDALinfo(file.path(datadir, tiff))
+sarg_raster <- raster(file.path(datadir, tiff))
+cell_count = ncell(sarg_raster)
+nlayers(sarg_raster)
+plot(sarg_raster)
+histinfo <- hist(sarg_raster, maxpixels=cell_count, col="springgreen")
+histinfo
+cellStats(sarg_raster, 'mean')
+ncell(sarg_raster)
+freq(sarg_raster)
+```
+
+Reclass Raster
+```{r reclass}
+dn <- 0:235
+dn
+pctcov  <- rescale(dn, to=c(0,0.1))
+pctcov
+dn2pct <- cbind(dn,pctcov)
+dn2pct
+dn_nodata <- 236:255
+dn2na <- cbind(dn_nodata, rep(NA, length(dn_nodata)))
+dn2reclass <- rbind(dn2pct, dn2na)
+dn2reclass
+sarg_pctcov <- reclassify(sarg_raster, dn2reclass)
+plot(sarg_pctcov)
+freq(sarg_pctcov)
+dataType(sarg_raster)
+dataType(sarg_pctcov)
+```
+
+Subset Raster
+```{r subset}
+# shpdir <- "/Users/allison/projects/natcap/mar2019/sargassum/Tourism"
+shpdir <- file.path(basedir,"data/Tourism")
+hexshp <- "T_aoi_v3_wgs_5k_pid.shp"
+hexaoi <- st_read(file.path(shpdir,hexshp))
+plot(hexaoi)
+
+sarg_pctcov_crop <- crop(sarg_pctcov, hexaoi)
+sarg_pctcov_crop_df <- as.data.frame(sarg_pctcov_crop, xy = TRUE)
+
+ggplot() +
+  geom_raster(data = sarg_pctcov_crop_df, aes(x=x, y=y)) +
+  geom_sf(data = hexaoi, color="black") +
+  ggtitle("MAR Model Hexagons") +
+  coord_sf()
+
+plot(sarg_pctcov_crop)
+
+```
+
+```{r time_series}
+# sargassum_allmonths <- list.files(datadir,
+#                                 pattern = glob2rx("*Year-201*.tiff$"),
+#                                 full.names = TRUE)
+# Get monthly tifs from 2012-2018 and create stack & brick
+sargassum_allmonths <- list.files(datadir,
+                                pattern = "Year-201[2-8]",
+                                full.names = TRUE)
+sargassum_allmonths_st <- stack(sargassum_allmonths)
+sargassum_allmonths_br <- brick(sargassum_allmonths_st)  # Takes awhile to build
+plot(sargassum_allmonths_br)
+
+# Crop raster to the model hexagon extent
+sargassum_allmonths_crop_br <- crop(sargassum_allmonths_br, hexaoi)
+plot(sargassum_allmonths_crop_br)
+
+# Rescale 8-bit integers to percent cover range (0-0.1%) and no data values
+sarg_allmonths_pctcov <- reclassify(sargassum_allmonths_crop_br, dn2reclass)
+plot(sarg_allmonths_pctcov)
+
+sarg_allmonths_pctcov_df <- as.data.frame(sarg_allmonths_pctcov,xy=TRUE)
+
+# Sum monthly % cover values
+sargassum_sum <- sum(sarg_allmonths_pctcov)
+names(sargassum_sum) <- "sarg_sum"
+plot(sargassum_sum)
+sargassum_sum_df <- as.data.frame(sargassum_sum, xy=TRUE)
+
+
+
+```
+```{r explore_subsets}
+lyrnames <- names(sargassum_allmonths_crop_br)
+str_subset(lyrnames,"\\.0[1-3]\\.")
+
+## Pull out each month (for all years) into its own Brick
+sarg_01_pctcov <- subset(sarg_allmonths_pctcov, str_subset(lyrnames, "\\.01\\."))
+sarg_02_pctcov <- subset(sarg_allmonths_pctcov, str_subset(lyrnames, "\\.02\\."))
+sarg_03_pctcov <- subset(sarg_allmonths_pctcov, str_subset(lyrnames, "\\.03\\."))
+sarg_04_pctcov <- subset(sarg_allmonths_pctcov, str_subset(lyrnames, "\\.04\\."))
+sarg_05_pctcov <- subset(sarg_allmonths_pctcov, str_subset(lyrnames, "\\.05\\."))
+sarg_06_pctcov <- subset(sarg_allmonths_pctcov, str_subset(lyrnames, "\\.06\\."))
+sarg_07_pctcov <- subset(sarg_allmonths_pctcov, str_subset(lyrnames, "\\.07\\."))
+sarg_08_pctcov <- subset(sarg_allmonths_pctcov, str_subset(lyrnames, "\\.08\\."))
+sarg_09_pctcov <- subset(sarg_allmonths_pctcov, str_subset(lyrnames, "\\.09\\."))
+sarg_10_pctcov <- subset(sarg_allmonths_pctcov, str_subset(lyrnames, "\\.10\\."))
+sarg_11_pctcov <- subset(sarg_allmonths_pctcov, str_subset(lyrnames, "\\.11\\."))
+sarg_12_pctcov <- subset(sarg_allmonths_pctcov, str_subset(lyrnames, "\\.12\\."))
+
+
+
+plot(sarg_01_pctcov)
+plot(sum(sarg_01_pctcov))
+sarg_01_pctcov_sum <- sum(sarg_01_pctcov)
+# Calculate % cover summs and convert to data frame for ggplot
+sarg_01_pctcov_sum_df <- as.data.frame(sarg_01_pctcov_sum, xy=TRUE)
+sarg_02_pctcov_sum_df <- as.data.frame(sum(sarg_02_pctcov), xy=TRUE)
+sarg_03_pctcov_sum_df <- as.data.frame(sum(sarg_03_pctcov), xy=TRUE)
+sarg_04_pctcov_sum_df <- as.data.frame(sum(sarg_04_pctcov), xy=TRUE)
+sarg_05_pctcov_sum_df <- as.data.frame(sum(sarg_05_pctcov), xy=TRUE)
+sarg_06_pctcov_sum_df <- as.data.frame(sum(sarg_06_pctcov), xy=TRUE)
+sarg_07_pctcov_sum_df <- as.data.frame(sum(sarg_07_pctcov), xy=TRUE)
+sarg_08_pctcov_sum_df <- as.data.frame(sum(sarg_08_pctcov), xy=TRUE)
+sarg_09_pctcov_sum_df <- as.data.frame(sum(sarg_09_pctcov), xy=TRUE)
+sarg_10_pctcov_sum_df <- as.data.frame(sum(sarg_10_pctcov), xy=TRUE)
+sarg_11_pctcov_sum_df <- as.data.frame(sum(sarg_11_pctcov), xy=TRUE)
+sarg_12_pctcov_sum_df <- as.data.frame(sum(sarg_12_pctcov), xy=TRUE)
+
+# Testing plots
+ggplot() +
+  geom_raster(data = sarg_01_pctcov_sum_df, aes(x=x, y=y, fill=layer)) +
+  scale_fill_viridis_c() +
+  ggtitle("Jan Sarg % Cov Sum") +
+  coord_sf()
+
+ggplot() +
+    geom_histogram(data = sarg_01_pctcov_sum_df, aes(layer), na.rm=TRUE, bins = 10)
+
+ggplot() +
+    geom_histogram(data = sarg_01_pctcov_sum_df, aes(layer), na.rm=TRUE, binwidth = 0.01)
+
+ggplot() +
+    geom_histogram(data = sarg_01_pctcov_sum_df, aes(layer) , na.rm=TRUE, binwidth = 0.01) +
+    scale_x_continuous(breaks = seq(0,0.1,0.01)) + 
+    labs(title="Sargassum Jan % Cover Sum", x="% cover")
+
+# # Plots for the 12 months -- each month summed
+# max_sum = 0.22
+# mo01 <- ggplot() +
+#     geom_histogram(data = sarg_01_pctcov_sum_df, aes(layer) , na.rm=TRUE, binwidth = 0.01) +
+#     expand_limits(x=max_sum) +
+#     labs(title="January", x="% cover")
+# mo02 <- ggplot() +
+#     geom_histogram(data = sarg_02_pctcov_sum_df, aes(layer) , na.rm=TRUE, binwidth = 0.01) +  
+#     expand_limits(x=0.22) +
+#     labs(title="February", x="% cover")
+# mo03 <- ggplot() +
+#     geom_histogram(data = sarg_03_pctcov_sum_df, aes(layer) , na.rm=TRUE, binwidth = 0.01) +
+#     expand_limits(x=0.22) +
+#     labs(title="March", x="% cover")
+# mo04 <- ggplot() +
+#     geom_histogram(data = sarg_04_pctcov_sum_df, aes(layer) , na.rm=TRUE, binwidth = 0.01) +
+#     expand_limits(x=0.22) +
+#     labs(title="April", x="% cover")
+# mo05 <- ggplot() +
+#     geom_histogram(data = sarg_05_pctcov_sum_df, aes(layer) , na.rm=TRUE, binwidth = 0.01) +
+#     expand_limits(x=0.22) +
+#     labs(title="May", x="% cover")
+# mo06 <- ggplot() +
+#     geom_histogram(data = sarg_06_pctcov_sum_df, aes(layer) , na.rm=TRUE, binwidth = 0.01) +
+#     expand_limits(x=0.22) +
+#     labs(title="June", x="% cover")
+# mo07 <- ggplot() +
+#     geom_histogram(data = sarg_07_pctcov_sum_df, aes(layer) , na.rm=TRUE, binwidth = 0.01) +
+#     expand_limits(x=0.22) +
+#     labs(title="July", x="% cover")
+# mo08 <- ggplot() +
+#     geom_histogram(data = sarg_08_pctcov_sum_df, aes(layer) , na.rm=TRUE, binwidth = 0.01) +
+#     expand_limits(x=0.22) +
+#     labs(title="August", x="% cover")
+# mo09 <- ggplot() +
+#     geom_histogram(data = sarg_09_pctcov_sum_df, aes(layer) , na.rm=TRUE, binwidth = 0.01) +
+#     expand_limits(x=0.22) +
+#     labs(title="September", x="% cover")
+# mo10 <- ggplot() +
+#     geom_histogram(data = sarg_10_pctcov_sum_df, aes(layer) , na.rm=TRUE, binwidth = 0.01) +
+#     expand_limits(x=0.22) +
+#     labs(title="October", x="% cover")
+# mo11 <- ggplot() +
+#     geom_histogram(data = sarg_11_pctcov_sum_df, aes(layer) , na.rm=TRUE, binwidth = 0.01) +
+#     expand_limits(x=0.22) +
+#     labs(title="November", x="% cover")
+# mo12 <- ggplot() +
+#     geom_histogram(data = sarg_12_pctcov_sum_df, aes(layer) , na.rm=TRUE, binwidth = 0.01) +
+#     expand_limits(x=0.22) +
+#    labs(title="December", x="% cover")
+# mo01
+# mo02
+# mo03
+# mo04
+# mo05
+# mo06
+# mo07
+# mo08
+# mo09
+# mo10
+# mo11
+# mo12
+# 
+# # Plot them all together
+# grid.arrange(
+#   mo01, mo02, mo03, 
+#   mo04, mo05, mo06,
+#   mo07, mo08, mo09,
+#   mo10, mo11, mo12,
+#   nrow=4
+# )
+
+```
+
+```{r explore_subsets_better}
+
+sumbymonth <- function(month_integer, allmonths_raster){
+  # Sums all the % cover values for the specified (integer) month
+  search_pattrn <- sprintf("\\.%02d\\.", month_integer)
+  lyrnames <- names(allmonths_raster)
+  new_lyrname <- sprintf("sarg_sum%02d", month_integer) 
+  # Looks for match of 2-digit month in layer names
+  # Subsets to include just layers that match that 2-digit month
+  # Sums values from the matching month layers into a new raster
+  month_sum_raster <- sum(subset(allmonths_raster, str_subset(lyrnames, search_pattrn)))
+  # Rename the layer according to the month
+  names(month_sum_raster)[1] <- new_lyrname
+  return(month_sum_raster)
+}
+
+# Create RasterBrick of Monthly Sum Rasters of Sargassum % Cover for all years
+sarg_mo_pctcov_sum <- brick(
+        lapply(seq(12),
+       FUN = sumbymonth,
+       allmonths_raster = sarg_allmonths_pctcov))
+# Names of the columns for each month's sum
+mo_cols <- names(sarg_mo_pctcov_sum)
+# Convert sum raster to a data fram
+sarg_mo_pctcov_sum_df <-as.data.frame(sarg_mo_pctcov_sum, xy=TRUE)
+# Transform data frame to long format (normalized)
+sarg_mo_pctcov_sum_norm <- gather(sarg_mo_pctcov_sum_df, key=monthsummed, value=sumpctcov, mo_cols)
+
+# Monthly sum histograms
+ggplot() +
+    geom_histogram(data = sarg_mo_pctcov_sum_norm, mapping = aes(sumpctcov) , na.rm=TRUE, binwidth = 0.01) +
+    labs(title="Monthly Sum Sargassum % Cover, 2012-2018", x="% cover") +
+    facet_wrap(~ monthsummed)
+
+# Monthly Raster view
+ggplot() +
+  geom_raster(data = sarg_mo_pctcov_sum_norm, mapping = aes(x=x, y=y, fill=sumpctcov)) +
+  scale_fill_viridis_c() +
+  facet_wrap(~ monthsummed) +
+  coord_sf()
+
+# All months/years sum Raster View
+# Testing plots
+# ggplot() +
+#   geom_raster(data = sarg_01_pctcov_sum_df, aes(x=x, y=y, fill=layer)) +
+#   scale_fill_viridis_c() +
+#   ggtitle("Jan Sarg % Cov Sum") +
+#   coord_sf()
+
+ggplot() +
+  geom_raster(data = sargassum_sum_df, mapping = aes(x=x, y=y, fill=layer)) +
+  scale_fill_viridis_c() +
+  coord_sf()
+```
+
+```{r extract_values}
+# Get centroid points
+hexaoi_centroid <- st_centroid(hexaoi)
+# Change attribute name from default (layer) to sarg_sum
+names(sargassum_sum) <- "sarg_sum"
+# Associate value from sum raster with centroid points
+hexaoi_sarg_pctcov_sum20122018 <- raster::extract(sargassum_sum, hexaoi_centroid, sp=TRUE)
+hexaoi_sarg_pctcov_sum20122018_df <-  as.data.frame(hexaoi_sarg_pctcov_sum20122018)
+# Output to csv
+write.csv(select(hexaoi_sarg_pctcov_sum20122018_df, pid, sarg_sum), "hexaoi_sarg_pctcov_sum20122018.csv", row.names=FALSE)
+
+# Neither of these work
+# st_write(hexaoi_sarg_pctcov_sum20122018_df, dsn = "hexaoi_sarg_pctcov_sum20122018.shp")
+# st_write(hexaoi_sarg_pctcov_sum20122018, dsn = "hexaoi_sarg_pctcov_sum20122018.shp")
+
+```
+
